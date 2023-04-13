@@ -88,22 +88,33 @@ if (Test-Connection $Computer -Count 1) {
         #Start of printer modification
         getPrinters #Call function to create variables of the printers
 
-        $answer = Read-Host "Which printer do you want to change? (Type the number seen after 'Printer')"
-        $printerSelection = Get-Variable -Name "Printer_$($answer)_*"
+        Do {
+            $answer = Read-Host "Which printer do you want to change? (Type the number seen after 'Printer')"
+            $printerSelection = Get-Variable -Name "Printer_$($answer)_*"
+            if($null -eq $printerSelection){
+
+            }
+        } Until (-not($null -eq $printerSelection))
 
         Write-Host "Printer selected: $($printerSelection.Value)."
 
+        $options = "uninstall", "rename", "testpage", "stop", "restart"
+        $optionsPass = $false
+
         Do {
             #Get answer for what we will do with the printer
-            $answer2 = Read-Host "What will we do? U(Uninstall), R(Rename), T(Print test page), S(Restart print spooler)"
-            if (-not($answer2 -eq "u" -OR $answer2 -eq "r" -OR $answer2 -eq "t"  -OR $answer2 -eq "s")) {
-                Write-Host "Invalid answer."
+            $answer2 = Read-Host "What will we do?`nUninstall (uninstalls printer)`nRename (renames a printer)`nTestPage (prints a test page)`nStop (Stops the print spooler)`nRestart (restarts the print spooler)`n"
+            foreach($option in $options){
+                if($answer2 -match $option){
+                    $optionsPass = $true
+                    Continue
+                }
             }
-        }Until($answer2 -eq "u" -OR $answer2 -eq "r" -OR $answer2 -eq "t"  -OR $answer2 -eq "s")
+        }Until($optionsPass -eq $true)
 
         $printerToChange = $printerSelection.Value
 
-        if ($answer2 -eq "r") { #ANSWER 'R'
+        if ($answer2 -eq "rename") { #ANSWER 'R'
             #Rename printer
             $newName = Read-Host "What will the new name be?" #Get new name
 
@@ -115,7 +126,7 @@ if (Test-Connection $Computer -Count 1) {
             Write-Host "Changed printer $printerToChange name to: $newName."
         }
 
-        if ($answer2 -eq "t") { #ANSWER 'T'
+        if ($answer2 -eq "testpage") {
             #Print a test page
             Invoke-Command -ComputerName $Computer -ScriptBlock {
                 param($printerToChange)
@@ -126,7 +137,7 @@ if (Test-Connection $Computer -Count 1) {
             Write-Host "Test page sent from printer $printerToChange on computer $Computer."
         } 
 
-        if ($answer2 -eq "u") { #ANSWER 'U'
+        if ($answer2 -eq "uninstall") {
             #Uninstall printer
             $areYouSure = Read-Host "Are you sure you want to uninstall $($printerSelection.Value) from $Computer? (Y/N)"
             if ($areYouSure -eq "y") {
@@ -141,8 +152,8 @@ if (Test-Connection $Computer -Count 1) {
             }
         }
 
-        if ($answer2 -eq "s") { #ANSWER 'S'
-            #Print a test page
+        if ($answer2 -eq "restart") {
+            #Restart spooler
             Invoke-Command -ComputerName $Computer -ScriptBlock {
                 Get-Service Spooler | Stop-Service
                 Write-Host "Spooler stopped."
@@ -152,6 +163,15 @@ if (Test-Connection $Computer -Count 1) {
                 Write-Host "Spooler started."
             }
             Write-Host "Print spooler has been restarted."
+        } 
+
+        if ($answer2 -eq "stop") {
+            #Stop spooler
+            Invoke-Command -ComputerName $Computer -ScriptBlock {
+                Get-Service Spooler | Stop-Service
+                Write-Host "Spooler stopped."
+            }
+            Write-Host "Print spooler has been stopped."
         } 
 
         Do {
