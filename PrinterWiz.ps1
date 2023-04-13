@@ -95,11 +95,11 @@ if (Test-Connection $Computer -Count 1) {
 
         Do {
             #Get answer for what we will do with the printer
-            $answer2 = Read-Host "What will we do? U(Uninstall), R(Rename), T(Print test page)"
-            if (-not($answer2 -eq "u" -OR $answer2 -eq "r" -OR $answer2 -eq "t")) {
+            $answer2 = Read-Host "What will we do? U(Uninstall), R(Rename), T(Print test page), S(Restart print spooler)"
+            if (-not($answer2 -eq "u" -OR $answer2 -eq "r" -OR $answer2 -eq "t"  -OR $answer2 -eq "s")) {
                 Write-Host "Invalid answer."
             }
-        }Until($answer2 -eq "u" -OR $answer2 -eq "r" -OR $answer2 -eq "t")
+        }Until($answer2 -eq "u" -OR $answer2 -eq "r" -OR $answer2 -eq "t"  -OR $answer2 -eq "s")
 
         $printerToChange = $printerSelection.Value
 
@@ -140,6 +140,19 @@ if (Test-Connection $Computer -Count 1) {
                 Write-Host "Cancelled removal."
             }
         }
+
+        if ($answer2 -eq "s") { #ANSWER 'S'
+            #Print a test page
+            Invoke-Command -ComputerName $Computer -ScriptBlock {
+                Get-Service Spooler | Stop-Service
+                Write-Host "Spooler stopped."
+                Start-Sleep 6
+                Write-Host "Starting spooler..."
+                Get-Service Spooler | Start-Service
+                Write-Host "Spooler started."
+            }
+            Write-Host "Print spooler has been restarted."
+        } 
 
         Do {
             #Get answer for if we will modify another printer
