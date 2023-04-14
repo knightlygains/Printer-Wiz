@@ -50,14 +50,17 @@ Function EnableWinRM {
             }
         }
     }
+    Write-Host ""
 }
 
 Function getPrinters {
+    param($errors)
     #Variable that allows us to loop through and get all printers on a remote computer.
-    $printers = Get-CimInstance -Class Win32_Printer -ComputerName $Computer | Select-Object Name, PrinterStatus
+    $printers = Get-CimInstance -Class Win32_Printer -ComputerName $Computer | Select-Object Name, PrinterStatus, LastErrorCode
 
     $variableNumber = 1
     #Loop through printers and create/update variables for each one.
+    Write-Host "Printers:" -ForegroundColor Green
     foreach ($printer in $printers) {
         [string]$printerName = $printer.Name 
         $printerName = $printerName -replace "\*",""
@@ -75,12 +78,30 @@ Function getPrinters {
             7 { $printerStatus = "Offline" }
         }
 
+        if($errors -eq $true){
+            foreach($printer in $printers){
+                $errorCode = $($printer.LastErrorCode)
+                if($null -eq $errorCode){
+                    $errorCode = "No error code"
+                }
+                Write-Host "Printer_$($variableNumber) $($printer.Name) ErrorCode: $errorCode."
+                $variableNumber += 1
+            }
+            return
+        }
+
         Write-Host "Printer_$($variableNumber) $($printer.Name) Status: $printerStatus."
         $variableNumber += 1
     }
 }
 
-$Computer = Read-Host "What's the computer hostname or IP?"
+Function getComp{
+    Write-Host "What's the computer hostname or IP?" -ForegroundColor Yellow
+    $comp = Read-Host
+    return $comp
+}
+
+$Computer = getComp
 
 if (Test-Connection $Computer -Count 1) {
     EnableWinRM -Computers $Computer
@@ -89,24 +110,30 @@ if (Test-Connection $Computer -Count 1) {
         getPrinters #Call function to create variables of the printers
 
         Do {
-            $answer = Read-Host "Which printer do you want to change? (Type the number seen after 'Printer')"
+            Write-Host "Which printer do you want to change? (e.g. '1')" -ForegroundColor Yellow
+            $answer = Read-Host
             $printerSelection = Get-Variable -Name "Printer_$($answer)_*"
-            if($null -eq $printerSelection){
-
-            }
         } Until (-not($null -eq $printerSelection))
 
         Write-Host "Printer selected: $($printerSelection.Value)."
 
-        $options = "uninstall", "rename", "testpage", "stop", "restart"
+        $options = "uninstall", "rename", "testpage", "stop", "restart", "errors"
         $optionsPass = $false
 
         Do {
             #Get answer for what we will do with the printer
-            $answer2 = Read-Host "What will we do?`nUninstall (uninstalls printer)`nRename (renames a printer)`nTestPage (prints a test page)`nStop (Stops the print spooler)`nRestart (restarts the print spooler)`n"
+            Write-Host "What will we do? (e.g. 'rename')" -ForegroundColor Yellow
+            Write-Host "Uninstall (uninstalls printer)"
+            Write-Host "Rename (renames a printer)"
+            Write-Host "TestPage (prints a test page)"
+            Write-Host "Stop (Stops the print spooler)"
+            Write-Host "Restart (restarts the print spooler)"
+            Write-Host "Errors (refreshes printer list with last error codes)"
+            $answer2 = Read-Host
             foreach($option in $options){
                 if($answer2 -match $option){
                     $optionsPass = $true
+                    Write-Host ""
                     Continue
                 }
             }
@@ -116,7 +143,8 @@ if (Test-Connection $Computer -Count 1) {
 
         if ($answer2 -eq "rename") { #ANSWER 'R'
             #Rename printer
-            $newName = Read-Host "What will the new name be?" #Get new name
+            Write-Host "What will the new name be?" -ForegroundColor Yellow
+            $newName = Read-Host #Get new name
 
             Invoke-Command -ComputerName $Computer -ScriptBlock {
                 param($printerToChange, $newName)
@@ -139,7 +167,8 @@ if (Test-Connection $Computer -Count 1) {
 
         if ($answer2 -eq "uninstall") {
             #Uninstall printer
-            $areYouSure = Read-Host "Are you sure you want to uninstall $($printerSelection.Value) from $Computer? (Y/N)"
+            Write-Host "Are you sure you want to uninstall $($printerSelection.Value) from $Computer? (Y/N)" -ForegroundColor Yellow
+            $areYouSure = Read-Host
             if ($areYouSure -eq "y") {
                 Invoke-Command -ComputerName $Computer -ScriptBlock {
                     param($printerToChange)
@@ -174,9 +203,14 @@ if (Test-Connection $Computer -Count 1) {
             Write-Host "Print spooler has been stopped."
         } 
 
+        if($answer2 -eq "errors"){
+            getPrinters($errors = $true)
+        }
+
         Do {
             #Get answer for if we will modify another printer
-            $continue = Read-Host "Would you like to modify another printer? (Y/N)"
+            Write-Host "Would you like to modify another printer? (Y/N)" -ForegroundColor Yellow
+            $continue = Read-Host
             if (-not($continue -eq "y" -OR $continue -eq "n")) {
                 Write-Host "Invalid answer."
             }
