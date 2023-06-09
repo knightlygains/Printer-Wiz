@@ -63,7 +63,7 @@ Function getPrinters {
     Write-Host "Printers:" -ForegroundColor Green
     foreach ($printer in $printers) {
         [string]$printerName = $printer.Name 
-        $printerName = $printerName -replace "\*",""
+        $printerName = $printerName -replace "\*", ""
         Set-Variable -Name "Printer_$($variableNumber)_$($printerName)" -Value "$($printer.Name)" -Scope script #create variable of each printer with the name as the value
         
         $printerStatus = ""
@@ -78,13 +78,14 @@ Function getPrinters {
             7 { $printerStatus = "Offline" }
         }
 
-        if($errors -eq $true){
-            foreach($printer in $printers){
+        if ($errors -eq $true) {
+            foreach ($printer in $printers) {
                 $errorCode = $($printer.LastErrorCode)
-                if($null -eq $errorCode){
+                if ($null -eq $errorCode) {
                     $errorCode = "No error code"
                 }
-                Write-Host "Printer_$($variableNumber) $($printer.Name) ErrorCode: $errorCode."
+                Write-Host "Printer_$($variableNumber) $($printer.Name) " -NoNewline
+                Write-Host "Error Code: $errorCode." -ForegroundColor Yellow
                 $variableNumber += 1
             }
             return
@@ -95,8 +96,8 @@ Function getPrinters {
     }
 }
 
-Function getComp{
-    Write-Host "What's the computer hostname or IP?" -ForegroundColor Yellow
+Function getComp {
+    Write-Host "What's the computer hostname?" -ForegroundColor Yellow
     $comp = Read-Host
     return $comp
 }
@@ -110,28 +111,43 @@ if (Test-Connection $Computer -Count 1) {
         getPrinters #Call function to create variables of the printers
 
         Do {
+            Write-Host ""
             Write-Host "Which printer do you want to change? (e.g. '1')" -ForegroundColor Yellow
+            Write-Host "Type 'other' to modify spooler and other options"
             $answer = Read-Host
-            $printerSelection = Get-Variable -Name "Printer_$($answer)_*"
-        } Until (-not($null -eq $printerSelection))
-
-        Write-Host "Printer selected: $($printerSelection.Value)."
+            if ($answer -eq "other") {
+                break
+            }
+            else {
+                $printerSelection = Get-Variable -Name "Printer_$($answer)_*"
+                Write-Host "Printer selected: $($printerSelection.Value)."
+            }
+        } Until (-not($null -eq $printerSelection) -OR $answer -eq "other")
 
         $options = "uninstall", "rename", "testpage", "stop", "restart", "errors"
         $optionsPass = $false
 
         Do {
             #Get answer for what we will do with the printer
-            Write-Host "What will we do? (e.g. 'rename')" -ForegroundColor Yellow
-            Write-Host "Uninstall (uninstalls printer)"
-            Write-Host "Rename (renames a printer)"
-            Write-Host "TestPage (prints a test page)"
-            Write-Host "Stop (Stops the print spooler)"
-            Write-Host "Restart (restarts the print spooler)"
-            Write-Host "Errors (refreshes printer list with last error codes)"
+            if ($answer -eq "other") {
+                Write-Host "What will we do? (e.g. 'restart')" -ForegroundColor Yellow
+                Write-Host "Stop (Stops the print spooler)"
+                Write-Host "Restart (restarts the print spooler)"
+                Write-Host "Errors (refreshes printer list with last error codes)"
+                $options = "stop", "restart", "errors"
+            }
+            else {
+                Write-Host "What will we do? (e.g. 'rename')" -ForegroundColor Yellow
+                Write-Host "Uninstall (uninstalls printer)"
+                Write-Host "Rename (renames a printer)"
+                Write-Host "TestPage (prints a test page)"
+                Write-Host "Stop (Stops the print spooler)"
+                Write-Host "Restart (restarts the print spooler)"
+                Write-Host "Errors (refreshes printer list with last error codes)"
+            }
             $answer2 = Read-Host
-            foreach($option in $options){
-                if($answer2 -match $option){
+            foreach ($option in $options) {
+                if ($answer2 -match $option) {
                     $optionsPass = $true
                     Write-Host ""
                     Continue
@@ -141,70 +157,97 @@ if (Test-Connection $Computer -Count 1) {
 
         $printerToChange = $printerSelection.Value
 
-        if ($answer2 -eq "rename") { #ANSWER 'R'
-            #Rename printer
-            Write-Host "What will the new name be?" -ForegroundColor Yellow
-            $newName = Read-Host #Get new name
+        switch ($answer2) {
+            "rename" {
+                #Rename printer
+                Write-Host "What will the new name be?" -ForegroundColor Yellow
+                $newName = Read-Host #Get new name
 
-            Invoke-Command -ComputerName $Computer -ScriptBlock {
-                param($printerToChange, $newName)
-                Start-Process powershell -Wait -ArgumentList "Rename-Printer", "-Name", "'$printerToChange'", "-NewName", "'$newName'"
-            } -ArgumentList ($printerToChange, $newName)
+                Invoke-Command -ComputerName $Computer -ScriptBlock {
+                    param($printerToChange, $newName)
+                    Start-Process powershell -Wait -ArgumentList "Rename-Printer", "-Name", "'$printerToChange'", "-NewName", "'$newName'"
+                } -ArgumentList ($printerToChange, $newName)
 
-            Write-Host "Changed printer $printerToChange name to: $newName."
-        }
-
-        if ($answer2 -eq "testpage") {
-            #Print a test page
-            Invoke-Command -ComputerName $Computer -ScriptBlock {
-                param($printerToChange)
-                $printer = Get-WmiObject Win32_Printer | Where-Object { $_.name -eq "$printerToChange" }
-                Write-Host "$printerToChange, $printer"
-                $printer.PrintTestPage()
-            } -ArgumentList ($printerToChange)
-            Write-Host "Test page sent from printer $printerToChange on computer $Computer."
-        } 
-
-        if ($answer2 -eq "uninstall") {
-            #Uninstall printer
-            Write-Host "Are you sure you want to uninstall $($printerSelection.Value) from $Computer? (Y/N)" -ForegroundColor Yellow
-            $areYouSure = Read-Host
-            if ($areYouSure -eq "y") {
+                Write-Host "Changed printer $printerToChange name to: $newName."
+            }
+            "testpage" {
+                #Print a test page
                 Invoke-Command -ComputerName $Computer -ScriptBlock {
                     param($printerToChange)
-                    Start-Process powershell -Wait -ArgumentList "Remove-Printer", "-Name", "'$printerToChange'"
+                    $printer = Get-WmiObject Win32_Printer | Where-Object { $_.name -eq "$printerToChange" }
+                    Write-Host "$printerToChange, $printer"
+                    $printer.PrintTestPage()
                 } -ArgumentList ($printerToChange)
-                Write-Host "Removed printer: $printerToChange."
+                Write-Host "Test page sent from printer $printerToChange on computer $Computer."
             }
-            else {
-                Write-Host "Cancelled removal."
+            "uninstall" {
+                #Uninstall printer
+                Write-Host "Are you sure you want to uninstall $($printerSelection.Value) from $Computer? (Y/N)" -ForegroundColor Yellow
+                $areYouSure = Read-Host
+                if ($areYouSure -eq "y") {
+                    Invoke-Command -ComputerName $Computer -ScriptBlock {
+                        param($printerToChange)
+                        Start-Process powershell -Wait -ArgumentList "Remove-Printer", "-Name", "'$printerToChange'"
+                    } -ArgumentList ($printerToChange)
+                    Write-Host "Removed printer: $printerToChange."
+                }
+                else {
+                    Write-Host "Cancelled removal."
+                }
             }
-        }
+            "restart" {
+                #Restart spooler
+                Invoke-Command -ComputerName $Computer -ScriptBlock {
+                    $spoolerStatus = Get-Service Spooler | Select-Object Status
+                    Get-Service Spooler | Stop-Service
+                    if ($spoolerStatus -eq "stopped") {
+                        Write-Host "Spooler stopped."
+                        Start-Sleep 6
+                    }
+                    else {
+                        Write-Host "Spooler failed to stop." -ForegroundColor Red
+                        break
+                    }
+                    Write-Host "Starting spooler..."
+                    Get-Service Spooler | Start-Service
+                    if ($spoolerStatus -eq "Running") {
+                        Write-Host "Spooler started."
+                    }
+                    else {
+                        Write-Host "Spooler failed to start" -ForegroundColor Red
+                    }
+                }
+                Write-Host "Print spooler has been restarted."
+            }
+            "stop" {
+                #Stop spooler
+                Invoke-Command -ComputerName $Computer -ScriptBlock {
+                    $spoolerStatus = Get-Service Spooler | Select-Object Status
+                    Get-Service Spooler | Stop-Service
+                    if ($spoolerStatus -eq "Stopped") {
+                        Write-Host "Spooler stopped."
+                    }
+                    else {
+                        Write-Host "Couldn't stop Spooler." -ForegroundColor Red
+                    }
+                }
 
-        if ($answer2 -eq "restart") {
-            #Restart spooler
-            Invoke-Command -ComputerName $Computer -ScriptBlock {
-                Get-Service Spooler | Stop-Service
-                Write-Host "Spooler stopped."
-                Start-Sleep 6
-                Write-Host "Starting spooler..."
-                Get-Service Spooler | Start-Service
-                Write-Host "Spooler started."
-            }
-            Write-Host "Print spooler has been restarted."
-        } 
+                Read-Host "The spooler will need to be started again to continue. Press ENTER to restart" -ForegroundColor Yellow
 
-        if ($answer2 -eq "stop") {
-            #Stop spooler
-            Invoke-Command -ComputerName $Computer -ScriptBlock {
-                Get-Service Spooler | Stop-Service
-                Write-Host "Spooler stopped."
+                Invoke-Command -ComputerName $Computer -ScriptBlock {
+                    Get-Service Spooler | Start-Service
+                    if ($spoolerStatus -eq "Running") {
+                        Write-Host "Spooler started."
+                    }
+                    else {
+                        Write-Host "Couldn't start Spooler." -ForegroundColor Red
+                    }
+                }
             }
-            Write-Host "Print spooler has been stopped."
-        } 
-
-        if($answer2 -eq "errors"){
-            getPrinters($errors = $true)
+            "errors" {
+                #Get printer error codes
+                getPrinters($errors = $true)
+            }
         }
 
         Do {
