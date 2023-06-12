@@ -224,19 +224,20 @@ if (Test-Connection $Computer -Count 1) {
                 Invoke-Command -ComputerName $Computer -ScriptBlock {
                     $spoolerStatus = Get-Service Spooler | Select-Object Status
                     Get-Service Spooler | Stop-Service
-                    if ($spoolerStatus -eq "Stopped") {
+                    if ($spoolerStatus.Status -eq "Stopped") {
                         Write-Host "Spooler stopped."
                     }
                     else {
                         Write-Host "Couldn't stop Spooler." -ForegroundColor Red
                     }
                 }
-
-                Read-Host "The spooler will need to be started again to continue. Press ENTER to restart" -ForegroundColor Yellow
+                Write-Host "The spooler will need to be started again to continue." -ForegroundColor Yellow
+                Read-Host "Press ENTER to restart"
 
                 Invoke-Command -ComputerName $Computer -ScriptBlock {
+                    $spoolerStatus = Get-Service Spooler | Select-Object Status
                     Get-Service Spooler | Start-Service
-                    if ($spoolerStatus -eq "Running") {
+                    if ($spoolerStatus.Status -eq "Running") {
                         Write-Host "Spooler started."
                     }
                     else {
