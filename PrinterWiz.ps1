@@ -55,6 +55,7 @@ Function EnableWinRM {
 
 Function getPrinters {
     param($errors)
+    Write-Host "Getting Printers..."
     #Variable that allows us to loop through and get all printers on a remote computer.
     $printers = Get-CimInstance -Class Win32_Printer -ComputerName $Computer | Select-Object Name, PrinterStatus, LastErrorCode
 
@@ -62,10 +63,13 @@ Function getPrinters {
     #Loop through printers and create/update variables for each one.
     Write-Host "Printers:" -ForegroundColor Green
     foreach ($printer in $printers) {
-        [string]$printerName = $printer.Name 
-        $printerName = $printerName -replace "\*", ""
-        Set-Variable -Name "Printer_$($variableNumber)_$($printerName)" -Value "$($printer.Name)" -Scope script #create variable of each printer with the name as the value
-        
+
+        #Remove unssuported variable name characters
+        $printerdotname = "$($printer.Name)"
+        $printerVariableName = $printerdotname -replace '\W+|\s', "_" #Removes any non word character and white space
+
+        Set-Variable -Name "Printer_$($variableNumber)_$printerVariableName" -Value $printerdotname -Scope script
+
         $printerStatus = ""
         #Convert Printer Status code
         switch ($printer.PrinterStatus) {
@@ -84,14 +88,21 @@ Function getPrinters {
                 if ($null -eq $errorCode) {
                     $errorCode = "No error code"
                 }
-                Write-Host "Printer_$($variableNumber) $($printer.Name) " -NoNewline
-                Write-Host "Error Code: $errorCode." -ForegroundColor Yellow
+                # Write-Host "Printer_$($variableNumber) $($printer.Name) ErrorCode: $errorCode."
+                $showPrinter = Get-Variable -Name "Printer_$($variableNumber)_*"
+                Write-Host "Printer $variableNumber $($showPrinter.Value) | " -NoNewLine 
+                Write-Host "$printerStatus | " -ForegroundColor "Yellow" -NoNewLine
+                Write-Host "Error Code: $($showPrinter.LastErrorCode)."
                 $variableNumber += 1
             }
             return
         }
 
-        Write-Host "Printer_$($variableNumber) $($printer.Name) Status: $printerStatus."
+        $showPrinter = Get-Variable -Name "Printer_$($variableNumber)_$printerVariableName"
+
+        Write-Host "Printer $variableNumber $($showPrinter.Value) | " -NoNewLine 
+        Write-Host "$printerStatus" -ForegroundColor "Yellow"
+
         $variableNumber += 1
     }
 }
@@ -106,6 +117,14 @@ $Computer = getComp
 
 if (Test-Connection $Computer -Count 1) {
     EnableWinRM -Computers $Computer
+    Write-Host "Enabling printer log (Microsoft-Windows-PrintService/Operational)..."
+    Invoke-Command -ComputerName $Computer -ScriptBlock {
+        $logName = 'Microsoft-Windows-PrintService/Operational'
+
+        $log = New-Object System.Diagnostics.Eventing.Reader.EventLogConfiguration $logName
+        $log.IsEnabled=$true
+        $log.SaveChanges()
+    }
     Do {
         #Start of printer modification
         getPrinters #Call function to create variables of the printers
@@ -160,15 +179,16 @@ if (Test-Connection $Computer -Count 1) {
         switch ($answer2) {
             "rename" {
                 #Rename printer
+
                 Write-Host "What will the new name be?" -ForegroundColor Yellow
                 $newName = Read-Host #Get new name
 
                 Invoke-Command -ComputerName $Computer -ScriptBlock {
                     param($printerToChange, $newName)
-                    Start-Process powershell -Wait -ArgumentList "Rename-Printer", "-Name", "'$printerToChange'", "-NewName", "'$newName'"
+                    Rename-Printer -Name "$($printerToChange)" -NewName "$newName" -Verbose
                 } -ArgumentList ($printerToChange, $newName)
 
-                Write-Host "Changed printer $printerToChange name to: $newName."
+                # Write-Host "Changed printer $printerToChange name to: $newName."
             }
             "testpage" {
                 #Print a test page
@@ -184,12 +204,15 @@ if (Test-Connection $Computer -Count 1) {
                 #Uninstall printer
                 Write-Host "Are you sure you want to uninstall $($printerSelection.Value) from $Computer? (Y/N)" -ForegroundColor Yellow
                 $areYouSure = Read-Host
+
                 if ($areYouSure -eq "y") {
+
                     Invoke-Command -ComputerName $Computer -ScriptBlock {
                         param($printerToChange)
-                        Start-Process powershell -Wait -ArgumentList "Remove-Printer", "-Name", "'$printerToChange'"
+                        $removeMe = Get-Printer | Where-Object {$_.Name -eq "$printerToChange"}
+                        Remove-Printer -InputObject $removeMe -Verbose
                     } -ArgumentList ($printerToChange)
-                    Write-Host "Removed printer: $printerToChange."
+
                 }
                 else {
                     Write-Host "Cancelled removal."
@@ -198,24 +221,9 @@ if (Test-Connection $Computer -Count 1) {
             "restart" {
                 #Restart spooler
                 Invoke-Command -ComputerName $Computer -ScriptBlock {
-                    $spoolerStatus = Get-Service Spooler | Select-Object Status
-                    Get-Service Spooler | Stop-Service
-                    if ($spoolerStatus -eq "stopped") {
-                        Write-Host "Spooler stopped."
-                        Start-Sleep 6
-                    }
-                    else {
-                        Write-Host "Spooler failed to stop." -ForegroundColor Red
-                        break
-                    }
-                    Write-Host "Starting spooler..."
-                    Get-Service Spooler | Start-Service
-                    if ($spoolerStatus -eq "Running") {
-                        Write-Host "Spooler started."
-                    }
-                    else {
-                        Write-Host "Spooler failed to start" -ForegroundColor Red
-                    }
+                    # $spoolerStatus = Get-Service Spooler | Select-Object Status
+                    Restart-Service -Name Spooler
+
                 }
                 Write-Host "Print spooler has been restarted."
             }
@@ -269,6 +277,10 @@ if (Test-Connection $Computer -Count 1) {
         }Until($continue -eq "y" -OR $continue -eq "n")
 
         Write-Host ""
+
+        #Reset printer variables since changes were likely made
+        #and for some reasy set-variable keeps old value *eye roll
+        Get-Variable -Name "Printer*" | Remove-Variable
         
     }Until($continue -eq "n") #End of printer modification and script
 }
